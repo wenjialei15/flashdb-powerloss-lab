@@ -13,16 +13,16 @@
 | KVDB：96 个键，更新其中 48 个 | 24 KB / 6 扇区 | 338 | 338 | 1 |
 | TSDB：追加 520 条记录，触发扇区轮转 | 12 KB / 3 扇区 | 2116 | 2116 | 4 |
 
-异常点：
+5 个异常点分成三类，不是同一个问题：
 
-| 位置 | 现象 |
-|---|---|
-| KVDB 第 46 次操作前 | `key006` 在重启后消失（原值也没有了） |
-| TSDB 第 1546 次操作前 | 1 条记录的负载与时间戳不匹配 |
-| TSDB 第 1550 / 1551 次操作前 | 27 条记录不匹配或时间倒序 |
-| TSDB 第 2064 次操作前 | 1 条记录不匹配 |
+| # | 位置 | 现象 | 类型 |
+|---|---|---|---|
+| 1 | KVDB cut 46 | `key006` 重启后消失，旧值新值都没有；再次重启也不恢复 | 丢键 |
+| 2 | TSDB cut 1546 / 2064 | 重启后能读，但再追加一条返回 `7`（`FDB_SAVED_FULL`），库变只读 | 不可写 |
+| 3 | TSDB cut 1550 / 1551 | 迭代器读出负时间戳的垃圾记录，且不收敛（超过 5000 条仍未结束） | 迭代失控 |
 
-完整输出见 [`docs/results.txt`](docs/results.txt)。
+完整输出见 [`docs/results.txt`](docs/results.txt)，
+可直接提交的 Issue 草稿见 [`docs/issue-draft.md`](docs/issue-draft.md)。
 
 ## 为什么要做
 
@@ -55,10 +55,41 @@ port/sim_flash.c       ← 本仓库：64 KB NOR 模型 + 操作计数 + longjmp
 - **KVDB**：96 个键必须都还在；被更新的 48 个键，值只能是旧值或新值，不能是第三种东西；重启后数据库还能继续写。
 - **TSDB**：每一条还能读到的记录，负载必须和它的时间戳对得上，时间必须严格递增。
 
-## 复现单个异常点
+## 逐个复现异常点
 
 ```bash
-./build/powerloss-lab cut 46      # 只跑 KVDB 的第 46 个断电点
+./build/powerloss-lab cut 46      # 丢键：key006 missing
+./build/powerloss-lab cut 1546    # 不可写：append rc=7
+./build/powerloss-lab cut 1550    # 迭代失控：负时间戳、不收敛
+```
+
+输出示例（cut 46）：
+
+```
+== KVDB: update 48 of 96 keys ==
+baseline: 338 flash ops, 6 sectors, 64 bytes per value
+
+    key006 missing
+  cut   46: 1 problem(s)
+    key006 missing
+      after a second reboot: 1 problem(s)
+KVDB: 338 cut points, 1 failed
+```
+
+输出示例（cut 1546，TSDB）：
+
+```
+      append after reboot failed: rc=7
+  cut 1546: 1 problem(s)
+```
+
+输出示例（cut 1550，TSDB）：
+
+```
+      ts=1801739606 status=2 payload[0..3]=03 0a 11 18 expect=6a 71 78 7f
+      ts=-269950502 status=2 payload[0..3]=03 0a 11 18 expect=66 6d 74 7b
+      ts=-269950502 out of order (previous 235340025)
+      iteration did not converge: >5000 records, first=100127 last=1397507390
 ```
 
 ## 边界

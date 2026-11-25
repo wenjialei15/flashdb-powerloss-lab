@@ -141,10 +141,16 @@
         <p class="sub" style="margin:0">预期：要么旧值，要么新值。实际：没有这个键。</p>
       </div>
       <div class="case">
-        <h3>扇区轮转时，记录和时间戳对不上</h3>
-        <div class="where">TSDB · cut 1546 / 1550 / 1551 / 2064 / 2116</div>
-        <p>TSDB 写满 3 个扇区后开始覆盖最旧的一条。在轮转的临界点断电，重启后能读到 27 条负载与时间戳不匹配、或时间倒序的记录。</p>
-        <p class="sub" style="margin:0">预期：每条可读记录的负载都能由它的时间戳算出来。实际：不是。</p>
+        <h3>重启后库变成只读</h3>
+        <div class="where">TSDB · cut 1546 / 2064</div>
+        <p>能初始化、已有记录也读得出来，但再追加一条直接返回 <code>7</code>（FDB_SAVED_FULL）。3 个扇区、520 条记录，远没写满。</p>
+        <p class="sub" style="margin:0">预期：rollover 回收最旧扇区，追加成功。实际：之后所有写入都失败。</p>
+      </div>
+      <div class="case">
+        <h3>迭代器读出垃圾，而且停不下来</h3>
+        <div class="where">TSDB · cut 1550 / 1551</div>
+        <p>同一个负载，在这两个点断电后，<code>fdb_tsl_iter</code> 返回负的时间戳、负载与时间戳对不上的记录，超过 5000 条仍未结束。</p>
+        <p class="sub" style="margin:0">第一条记录的 time 已经是 1801739606，而本次写入范围是 100000–100519。</p>
       </div>
     </div>
   </div>
@@ -186,11 +192,11 @@
     <div class="split">
       <div>
         <p>2454 个点里 2449 个正常恢复，说明 FlashDB 的状态机整体是成立的。</p>
-        <p>剩下 5 个点集中在两类地方：KV 的 GC 恢复、TSDB 的扇区轮转。这两处都要"先动元数据、再动数据"，顺序一旦被打断，恢复逻辑就可能读过界或删错项。</p>
+        <p>剩下 5 个点集中在两处：KV 的 GC 恢复、TSDB 的扇区轮转。它们都遵循"先写元数据、再搬数据"，顺序被打断后，恢复逻辑可能删错项、误判库满，或者按坏掉的扇区头继续遍历。</p>
       </div>
       <div>
         <p>它们<strong>不是</strong>已确认的上游 bug：没有提 issue，也没有补丁。实验台只负责把现象稳定复现出来。</p>
-        <p>复现命令：<code>./build/powerloss-lab cut 46</code>。如果你要拿它去提 issue，先补一个最小用例。</p>
+        <p>复现命令：<code>./build/powerloss-lab cut 46</code>、<code>cut 1546</code>、<code>cut 1550</code>。可以直接提交的 issue 草稿放在仓库的 <code>docs/issue-draft.md</code>。</p>
       </div>
     </div>
   </div>

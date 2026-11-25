@@ -223,6 +223,10 @@ static void kv_scenario(void)
         if (bad) {
             failed_cuts++;
             printf("  cut %4d: %d problem(s)\n", cut, bad);
+            if (g_single_cut) {
+                kv_boot();
+                printf("      after a second reboot: %d problem(s)\n", kv_verify());
+            }
         }
     }
 
@@ -267,10 +271,15 @@ static int ts_workload(int count)
     return 0;
 }
 
+#define TS_MAX_READ     5000
+
 struct ts_check {
     int count;
     int bad;
+    int printed;
+    int overflow;
     fdb_time_t last;
+    fdb_time_t first;
 };
 
 static bool ts_cb(fdb_tsl_t tsl, void *arg)
@@ -281,8 +290,17 @@ static bool ts_cb(fdb_tsl_t tsl, void *arg)
     uint8_t expect[TS_LEN];
     size_t i;
 
+    if (check->count == 0) {
+        check->first = tsl->time;
+    }
+    if (check->count >= TS_MAX_READ) {
+        check->overflow = 1;
+        return true;            /* stop: the iterator is not converging */
+    }
+
     if (tsl->status != FDB_TSL_WRITE) {
         check->count++;
+        check->last = tsl->time;
         return false;           /* rolled-over / deleted record, no payload to trust */
     }
 
@@ -293,12 +311,25 @@ static bool ts_cb(fdb_tsl_t tsl, void *arg)
     for (i = 0; i < TS_LEN; i++) {
         if (payload[i] != expect[i]) {
             check->bad++;
+            if (check->printed < 6) {
+                printf("      ts=%lld status=%d payload[0..3]=%02x %02x %02x %02x "
+                       "expect=%02x %02x %02x %02x\n",
+                       (long long)tsl->time, (int)tsl->status,
+                       payload[0], payload[1], payload[2], payload[3],
+                       expect[0], expect[1], expect[2], expect[3]);
+                check->printed++;
+            }
             break;
         }
     }
 
     if (tsl->time <= check->last) {
         check->bad++;               /* order must survive a reboot */
+        if (check->printed < 6) {
+            printf("      ts=%lld out of order (previous %lld)\n",
+                   (long long)tsl->time, (long long)check->last);
+            check->printed++;
+        }
     }
     check->last = tsl->time;
     check->count++;
@@ -315,7 +346,15 @@ static int ts_verify(void)
 
     fdb_tsl_iter(&g_tsdb, ts_cb, &check);
 
+    if (check.overflow) {
+        printf("      iteration did not converge: >%d records, first=%lld last=%lld\n",
+               TS_MAX_READ, (long long)check.first, (long long)check.last);
+        return check.bad + 1;
+    }
+
     if (check.bad != 0) {
+        printf("      readable=%d first=%lld last=%lld\n", check.count,
+               (long long)check.first, (long long)check.last);
         return check.bad;
     }
 
@@ -324,9 +363,11 @@ static int ts_verify(void)
         uint8_t payload[TS_LEN];
         struct fdb_blob blob;
         ts_payload(payload, TS_BASE + TS_COUNT + 1);
-        if (fdb_tsl_append_with_ts(&g_tsdb,
+        fdb_err_t rc = fdb_tsl_append_with_ts(&g_tsdb,
                                    fdb_blob_make(&blob, payload, sizeof(payload)),
-                                   TS_BASE + TS_COUNT + 1) != FDB_NO_ERR) {
+                                   TS_BASE + TS_COUNT + 1);
+        if (rc != FDB_NO_ERR) {
+            printf("      append after reboot failed: rc=%d\n", (int)rc);
             return 1;
         }
     }
@@ -373,6 +414,10 @@ static void ts_scenario(void)
     for (cut = 1; cut <= total_ops; cut++) {
         int bad;
 
+        if (g_single_cut && cut != g_single_cut) {
+            continue;
+        }
+
         sim_flash_restore();
         if (ts_boot() != 0) {
             failed_cuts++;
@@ -415,9 +460,7 @@ int main(int argc, char **argv)
            (int)(SIM_FLASH_SIZE / 1024), (int)SIM_FLASH_SECTOR);
 
     kv_scenario();
-    if (!g_single_cut) {
-        ts_scenario();
-    }
+    ts_scenario();
 
     printf("TOTAL: %d failure(s)\n", g_failures);
     return g_failures == 0 ? 0 : 1;
