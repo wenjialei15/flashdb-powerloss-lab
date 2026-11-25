@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FlashDB 掉电实验 · 2454 个断电点，5 个异常</title>
+<style>
+  :root{
+    --ink:#191b1f; --muted:#5d636e; --line:#e2e0da; --bg:#fbfaf7;
+    --card:#fff; --accent:#b45309; --ok:#0f6e56; --bar:#d7d4cc; --mono:ui-monospace,SFMono-Regular,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    line-height:1.7;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:920px;margin:0 auto;padding:0 28px}
+  code,pre,.mono{font-family:var(--mono)}
+  header{padding:64px 0 36px}
+  .top{display:flex;justify-content:space-between;align-items:baseline;gap:16px;
+    font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);
+    border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:44px}
+  .top a{color:var(--muted);text-decoration:none;letter-spacing:0;text-transform:none;font-size:13px}
+  h1{font-size:40px;line-height:1.22;font-weight:600;letter-spacing:-.02em;margin:0 0 18px}
+  h1 em{font-style:normal;color:var(--accent)}
+  .lede{font-size:16.5px;color:var(--muted);max-width:620px;margin:0}
+  .stats{display:flex;gap:44px;flex-wrap:wrap;margin:36px 0 8px}
+  .stat b{display:block;font-size:32px;font-weight:600;letter-spacing:-.02em;line-height:1.1}
+  .stat span{font-size:12.5px;color:var(--muted)}
+  .stat.bad b{color:var(--accent)}
+  section{padding:44px 0;border-top:1px solid var(--line)}
+  h2{font-size:19px;font-weight:600;margin:0 0 6px}
+  .sub{color:var(--muted);font-size:13.5px;margin:0 0 24px}
+  p{font-size:15px;margin:0 0 14px}
+  table{width:100%;border-collapse:collapse;font-size:14px;background:var(--card);border:1px solid var(--line)}
+  th,td{padding:11px 14px;border-bottom:1px solid var(--line);text-align:left}
+  th{font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:500}
+  tr:last-child td{border-bottom:0}
+  td.n{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  .bad{color:var(--accent);font-weight:600}
+  .ok{color:var(--ok)}
+  .coverage{background:var(--card);border:1px solid var(--line);padding:20px 22px;margin-top:22px}
+  .row{display:grid;grid-template-columns:150px 1fr 64px;gap:14px;align-items:center;margin-bottom:14px}
+  .row:last-child{margin-bottom:0}
+  .row .label{font-size:13px;color:var(--muted)}
+  .row .count{font-family:var(--mono);font-size:12.5px;color:var(--muted);text-align:right}
+  .bar{position:relative;height:14px;background:var(--bar);border-radius:2px;overflow:visible}
+  .tick{position:absolute;top:-3px;width:3px;height:20px;background:var(--accent);border-radius:1px}
+  .tick.cluster{width:7px}
+  .cases{display:grid;gap:18px}
+  .case{border:1px solid var(--line);background:var(--card);padding:20px 22px;border-left:3px solid var(--accent)}
+  .case h3{margin:0 0 6px;font-size:15px;font-weight:600}
+  .case .where{font-family:var(--mono);font-size:12px;color:var(--muted);margin-bottom:10px}
+  .case p{margin:0 0 8px;font-size:14px}
+  pre{background:#f6f4ef;border:1px solid var(--line);padding:14px 16px;overflow-x:auto;
+    font-size:12.5px;line-height:1.7;margin:14px 0 0}
+  .split{display:grid;grid-template-columns:1fr 1fr;gap:32px}
+  ul{margin:0;padding-left:20px}
+  li{font-size:14.5px;margin-bottom:8px}
+  footer{border-top:1px solid var(--line);padding:28px 0 48px;font-size:13px;color:var(--muted)}
+  footer a{color:var(--muted)}
+  @media (max-width:700px){
+    h1{font-size:29px}
+    .stats{gap:26px}
+    .split{grid-template-columns:1fr;gap:20px}
+    .row{grid-template-columns:110px 1fr 50px}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <div class="top">
+      <span>flashdb · power-loss lab</span>
+      <a href="https://github.com/wenjialei15/flashdb-powerloss-lab">GitHub →</a>
+    </div>
+    <h1>2454 次断电，<br><em>5 次数据异常</em>。</h1>
+    <p class="lede">
+      把 FlashDB 的真实源码编译到电脑上，在每一次 Flash 擦写之前拔掉电源，重新上电，检查键值和时间序列是否还完整。
+    </p>
+    <div class="stats">
+      <div class="stat"><b>2454</b><span>个断电点</span></div>
+      <div class="stat bad"><b>5</b><span>个异常点</span></div>
+      <div class="stat"><b>2</b><span>个数据库（KV / TS）</span></div>
+      <div class="stat"><b>0</b><span>块开发板</span></div>
+    </div>
+  </div>
+</header>
+
+<section>
+  <div class="wrap">
+    <h2>结果</h2>
+    <p class="sub">KVDB 看"键还在不在、值是不是旧的或新的"；TSDB 看"每条记录的负载和时间戳对不对得上"。</p>
+    <table>
+      <thead>
+        <tr><th>场景</th><th>分区</th><th>一次流程的操作数</th><th>断电点</th><th>异常</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>KVDB：96 个键，更新 48 个</td>
+          <td class="n">24 KB / 6 扇区</td><td class="n">338</td><td class="n">338</td>
+          <td class="bad">1</td>
+        </tr>
+        <tr>
+          <td>TSDB：追加 520 条，触发扇区轮转</td>
+          <td class="n">12 KB / 3 扇区</td><td class="n">2116</td><td class="n">2116</td>
+          <td class="bad">4</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="coverage">
+      <div class="row">
+        <span class="label">KVDB · 338 点</span>
+        <div class="bar"><span class="tick" style="left:13.6%" title="cut 46"></span></div>
+        <span class="count">1 失败</span>
+      </div>
+      <div class="row">
+        <span class="label">TSDB · 2116 点</span>
+        <div class="bar">
+          <span class="tick cluster" style="left:73.0%" title="cut 1546 / 1550 / 1551"></span>
+          <span class="tick" style="left:97.5%" title="cut 2064"></span>
+        </div>
+        <span class="count">4 失败</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>5 个异常点</h2>
+    <p class="sub">位置是"第 N 次擦写之前掉电"。这些是实验台跑出来的现象，尚未向上游确认。</p>
+    <div class="cases">
+      <div class="case">
+        <h3>一个键在重启后消失了</h3>
+        <div class="where">KVDB · cut 46 / 338 · key006</div>
+        <p>这次更新覆盖 48 个键。在第 46 次擦写之前断电，重启后 <code>key006</code> 既读不到新值，也读不到旧值——它被恢复流程删掉了。</p>
+        <p class="sub" style="margin:0">预期：要么旧值，要么新值。实际：没有这个键。</p>
+      </div>
+      <div class="case">
+        <h3>扇区轮转时，记录和时间戳对不上</h3>
+        <div class="where">TSDB · cut 1546 / 1550 / 1551 / 2064 / 2116</div>
+        <p>TSDB 写满 3 个扇区后开始覆盖最旧的一条。在轮转的临界点断电，重启后能读到 27 条负载与时间戳不匹配、或时间倒序的记录。</p>
+        <p class="sub" style="margin:0">预期：每条可读记录的负载都能由它的时间戳算出来。实际：不是。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>怎么做的</h2>
+    <p class="sub">没有复刻 FlashDB，跑的是上游源码。</p>
+    <div class="split">
+      <div>
+        <p>FlashDB 本来就有 FAL 抽象层：把 Flash 设备换成 64 KB 内存模型，所有擦写就都经过同一个函数。</p>
+        <p>在那里计数，数到第 N 次就 <code>longjmp</code> 出去——这次操作不执行，等价于"在它之前掉电"。</p>
+      </div>
+      <div>
+        <p>关键是 NOR 语义：写入必须是 <code>flash &amp;= data</code>，只能把 1 变 0。</p>
+        <p>如果用 <code>memcpy</code>，"没擦除就写"这种错误状态会被悄悄修好，测出来的全是假绿灯。</p>
+      </div>
+    </div>
+<pre>static int sim_write(long off, const uint8_t *buf, size_t size)
+{
+    if (size == 0) return 0;
+
+    g_ops++;
+    if (g_cut_at &gt; 0 &amp;&amp; g_ops &gt;= g_cut_at) {
+        longjmp(*g_cut_env, 1);      /* 断电：这次写不执行 */
+    }
+
+    for (size_t i = 0; i &lt; size; i++)
+        g_flash[off + i] &amp;= buf[i];   /* NOR：只能清 0 */
+    return 0;
+}</pre>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>这个结果意味着什么</h2>
+    <div class="split">
+      <div>
+        <p>2454 个点里 2449 个正常恢复，说明 FlashDB 的状态机整体是成立的。</p>
+        <p>剩下 5 个点集中在两类地方：KV 的 GC 恢复、TSDB 的扇区轮转。这两处都要"先动元数据、再动数据"，顺序一旦被打断，恢复逻辑就可能读过界或删错项。</p>
+      </div>
+      <div>
+        <p>它们<strong>不是</strong>已确认的上游 bug：没有提 issue，也没有补丁。实验台只负责把现象稳定复现出来。</p>
+        <p>复现命令：<code>./build/powerloss-lab cut 46</code>。如果你要拿它去提 issue，先补一个最小用例。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>边界</h2>
+    <ul>
+      <li>只模拟"操作之前"掉电，不模拟擦除做到一半、写入只完成一部分的物理时序。</li>
+      <li>单线程，不覆盖多任务并发写同一个库。</li>
+      <li>重启是进程内清零 + 重新 init，不等价于真实复位的外设状态。</li>
+      <li>这套东西是验证工具，不能替代真机的高低温与老化测试。</li>
+    </ul>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    Apache-2.0 · 上游 FlashDB 与 FAL 代码版权归其作者所有 ·
+    <a href="https://github.com/wenjialei15/flashdb-powerloss-lab">github.com/wenjialei15/flashdb-powerloss-lab</a>
+  </div>
+</footer>
+
+</body>
+</html>

@@ -1,0 +1,20 @@
+FlashDB power-loss lab
+device: 64 KiB, 4096 B sectors
+
+== KVDB: update 48 of 96 keys ==
+baseline: 338 flash ops, 6 sectors, 64 bytes per value
+
+    key006 missing
+  cut   46: 1 problem(s)
+KVDB: 338 cut points, 1 failed
+
+== TSDB: append 520 records, 3 sectors ==
+baseline: 2116 flash ops
+
+  cut 1546: 1 problem(s)
+  cut 1550: 27 problem(s)
+  cut 1551: 27 problem(s)
+  cut 2064: 1 problem(s)
+TSDB: 2116 cut points, 4 failed
+
+TOTAL: 5 failure(s)

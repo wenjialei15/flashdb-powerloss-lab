@@ -1,0 +1,3 @@
+[submodule "third_party/FlashDB"]
+	path = third_party/FlashDB
+	url = https://github.com/armink/FlashDB.git
